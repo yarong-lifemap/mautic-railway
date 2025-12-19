@@ -3,6 +3,15 @@ set -eu
 
 echo "[railway] entrypoint starting"
 
+# Snapshot environment for debugging Railway deployments.
+# NOTE: This contains secrets. Keep it inside the container filesystem and avoid printing to stdout.
+# Location intentionally under /etc so it's easy to find in Railway SSH.
+# Best-effort only; should never break container startup.
+(
+  umask 0077
+  printenv | sort > /etc/environment 2>/dev/null || true
+) >/dev/null 2>&1 || true
+
 # Chain to upstream Mautic entrypoint so DOCKER_MAUTIC_ROLE works (mautic_web/mautic_cron/mautic_worker)
 # We keep this wrapper to provide Railway-specific Apache guardrails + optional /data persistence hydration.
 #
