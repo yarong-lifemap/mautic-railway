@@ -1,6 +1,21 @@
 #!/bin/sh
 set -eu
 
+# If Apache errors with "<Directory> was not closed" on Railway, it usually means
+# /etc/apache2/conf-available/zz-railway.conf was corrupted/partially-written at runtime.
+# As a guardrail, validate/restore it from the baked-in image copy before starting Apache.
+if [ -f /etc/apache2/conf-available/zz-railway.conf ]; then
+  # Ensure the file has a closing tag; if not, restore from image layer backup (conf-available should be immutable).
+  if ! grep -q '</Directory>' /etc/apache2/conf-available/zz-railway.conf; then
+    echo "[railway] zz-railway.conf appears corrupted (missing </Directory>); restoring"
+    # The file in /etc/apache2/conf-available should come from the image; re-copy it from our repo copy if present.
+    # (During build we copy it from /zz-railway.conf)
+    if [ -f /zz-railway.conf ]; then
+      cp /zz-railway.conf /etc/apache2/conf-available/zz-railway.conf
+    fi
+  fi
+fi
+
 MAUTIC_ROOT="/var/www/html"
 
 mkdir -p /data/config /data/logs /data/media /data/tmp

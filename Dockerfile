@@ -9,6 +9,9 @@ RUN a2dismod mpm_event mpm_worker || true \
 # Copy a static config file to avoid any shell/escaping surprises in build environments.
 COPY zz-railway.conf /etc/apache2/conf-available/zz-railway.conf
 
+# Also copy it to a safe location so the entrypoint can restore it if something corrupts conf-available at runtime.
+COPY zz-railway.conf /zz-railway.conf
+
 # Enable config; avoid failing the image build if Apache reload fails inside the build environment.
 RUN a2enconf zz-railway || true
 
