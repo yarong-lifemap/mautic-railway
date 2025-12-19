@@ -110,7 +110,11 @@ fi
 
 mkdir -p /data/config /data/logs /data/media /data/tmp
 
-# Make it writable regardless of runtime UID (Railway volumes often mount as root:root)
+# Ensure Apache runtime user can write to persisted volume paths.
+# NOTE: chmod alone may not be enough if user needs directory ownership for created files.
+if [ -n "${APACHE_USER:-}" ]; then
+  chown -R "${APACHE_USER}:${APACHE_GROUP:-${APACHE_USER}}" /data || true
+fi
 chmod -R a+rwX /data || true
 
 # Replace expected Mautic paths with symlinks into /data
@@ -123,6 +127,14 @@ mkdir -p "${MAUTIC_ROOT}/var"
 ln -s /data/logs "${MAUTIC_ROOT}/var/logs"
 mkdir -p "${MAUTIC_ROOT}/docroot"
 ln -s /data/media "${MAUTIC_ROOT}/docroot/media"
+
+# Post-symlink diagnostics: confirm config now points to /data/config and is writable
+echo "[railway][fs] post-symlink config path resolution"
+ls -ld "${MAUTIC_ROOT}/config" || true
+ls -ld /data/config || true
+( command -v readlink >/dev/null 2>&1 && echo "[railway][fs] readlink -f ${MAUTIC_ROOT}/config: $(readlink -f \"${MAUTIC_ROOT}/config\" 2>/dev/null || true)" ) || true
+( umask 0002; echo "test" > "${MAUTIC_ROOT}/config/.write-test-post" && rm -f "${MAUTIC_ROOT}/config/.write-test-post" && echo "[railway][fs] post-symlink write test: OK" ) 2>/dev/null \
+  || echo "[railway][fs] post-symlink write test: FAILED"
 
 # Keep group-writable defaults for created files
 umask 0002
