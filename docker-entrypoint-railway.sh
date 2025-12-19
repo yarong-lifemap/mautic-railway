@@ -3,12 +3,10 @@ set -eu
 
 echo "[railway] entrypoint starting"
 
-# Optional role switch (lets Railway run this image as a non-web service without a custom start command)
-ROLE="${ROLE:-web}"
-if [ "${ROLE}" = "fuse-test" ]; then
-  echo "[railway] ROLE=fuse-test; running /usr/local/bin/railway-fuse-test.sh"
-  exec /usr/local/bin/railway-fuse-test.sh
-fi
+# Chain to upstream Mautic entrypoint so DOCKER_MAUTIC_ROLE works (mautic_web/mautic_cron/mautic_worker)
+# We keep this wrapper to provide Railway-specific Apache guardrails + optional /data persistence hydration.
+#
+# NOTE: The upstream entrypoint requires DOCKER_MAUTIC_ROLE and checks DB connectivity and config/local.php.
 
 # Force a single Apache MPM at runtime too (some environments enable modules at container start).
 a2dismod mpm_event mpm_worker mpm_prefork >/dev/null 2>&1 || true
@@ -135,4 +133,10 @@ fi
 # Keep group-writable defaults for created files
 umask 0002
 
+# If the upstream entrypoint exists, run it. This enables DOCKER_MAUTIC_ROLE behavior from mautic/mautic.
+if [ -x /entrypoint.sh ]; then
+  exec /entrypoint.sh "$@"
+fi
+
+# Fallback (shouldn't happen)
 exec "$@"
