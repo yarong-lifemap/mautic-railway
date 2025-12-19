@@ -1,8 +1,10 @@
 FROM mautic/mautic:5-apache
 
 # Ensure required Apache modules/configs are available and MPM is consistent for mod_php
-RUN a2dismod mpm_event mpm_worker || true \
+# Some base images enable multiple MPMs via conf/modules; make it deterministic.
+RUN a2dismod mpm_event mpm_worker mpm_prefork || true \
  && a2enmod mpm_prefork \
+ && a2dismod mpm_event mpm_worker || true \
  && a2enconf servername || true
 
 # Railway/Apache/PHP config: allow /data and /tmp, and move temp/session dirs onto /data/tmp
