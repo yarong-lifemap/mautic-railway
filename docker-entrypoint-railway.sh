@@ -5,16 +5,30 @@ set -eu
 # /etc/apache2/conf-available/zz-railway.conf was corrupted/partially-written at runtime.
 # As a guardrail, validate/restore it from the baked-in image copy before starting Apache.
 if [ -f /etc/apache2/conf-available/zz-railway.conf ]; then
-  # Ensure the file has a closing tag; if not, restore from image layer backup (conf-available should be immutable).
+  # Ensure the file has a closing tag; if not, restore from image layer backup.
   if ! grep -q '</Directory>' /etc/apache2/conf-available/zz-railway.conf; then
     echo "[railway] zz-railway.conf appears corrupted (missing </Directory>); restoring"
-    # The file in /etc/apache2/conf-available should come from the image; re-copy it from our repo copy if present.
-    # (During build we copy it from /zz-railway.conf)
     if [ -f /zz-railway.conf ]; then
       cp /zz-railway.conf /etc/apache2/conf-available/zz-railway.conf
     fi
   fi
 fi
+
+# Always (re)create the enabled symlink at runtime (some platforms/volumes can clobber conf-enabled).
+ln -sf ../conf-available/zz-railway.conf /etc/apache2/conf-enabled/zz-railway.conf
+
+# Log what Apache will actually parse (since you don't have shell access).
+echo "[railway] --- /etc/apache2/conf-enabled/zz-railway.conf ---"
+cat -n /etc/apache2/conf-enabled/zz-railway.conf || true
+
+echo "[railway] --- /etc/apache2/conf-available/zz-railway.conf ---"
+cat -n /etc/apache2/conf-available/zz-railway.conf || true
+
+echo "[railway] --- ls -l /etc/apache2/conf-enabled/zz-railway.conf /etc/apache2/conf-available/zz-railway.conf ---"
+ls -l /etc/apache2/conf-enabled/zz-railway.conf /etc/apache2/conf-available/zz-railway.conf || true
+
+echo "[railway] --- apache2ctl -t (configtest) ---"
+apache2ctl -t || true
 
 MAUTIC_ROOT="/var/www/html"
 
