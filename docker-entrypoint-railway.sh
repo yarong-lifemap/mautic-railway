@@ -76,11 +76,10 @@ case "${DOCKER_MAUTIC_ROLE:-}" in
   'site_url' => getenv('MAUTIC_SITE_URL'),
 );
 EOF
-      # best-effort ownership
-      if [ -n "${APACHE_USER:-}" ]; then
-        chown "${APACHE_USER}:${APACHE_GROUP:-${APACHE_USER}}" "${CONFIG_DIR}/local.php" || true
-      fi
-      chmod 640 "${CONFIG_DIR}/local.php" || true
+      # Ensure PHP can read it even in cron/worker containers.
+      # The upstream image defaults to www-data, but we use best-effort and permissive mode.
+      chown "${MAUTIC_WWW_USER:-www-data}:${MAUTIC_WWW_GROUP:-www-data}" "${CONFIG_DIR}/local.php" 2>/dev/null || true
+      chmod 644 "${CONFIG_DIR}/local.php" || true
     fi
     ;;
 esac
