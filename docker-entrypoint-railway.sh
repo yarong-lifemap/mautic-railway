@@ -1,6 +1,18 @@
 #!/bin/sh
 set -eu
 
+echo "[railway] entrypoint starting"
+
+# Force a single Apache MPM at runtime too (some environments enable modules at container start).
+a2dismod mpm_event mpm_worker mpm_prefork >/dev/null 2>&1 || true
+
+a2enmod mpm_prefork >/dev/null 2>&1 || true
+
+a2dismod mpm_event mpm_worker >/dev/null 2>&1 || true
+
+# Show active MPM modules for debugging (one line each).
+apache2ctl -M 2>/dev/null | grep -E 'mpm_(event|worker|prefork)_module' || true
+
 # If Apache errors with "<Directory> was not closed" on Railway, it usually means
 # /etc/apache2/conf-available/zz-railway.conf was corrupted/partially-written at runtime.
 # As a guardrail, validate/restore it from the baked-in image copy before starting Apache.
