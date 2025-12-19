@@ -60,16 +60,22 @@ case "${DOCKER_MAUTIC_ROLE:-}" in
       : "${MAUTIC_DB_PASSWORD:?MAUTIC_DB_PASSWORD is required}"
 
       mkdir -p "${CONFIG_DIR}"
-      cat > "${CONFIG_DIR}/local.php" <<EOF
+      cat > "${CONFIG_DIR}/local.php" <<'EOF'
 <?php
-\$parameters = array(
+$parameters = array(
+  // Force TCP connectivity. If db_host is "localhost" libmysql often tries a unix socket and fails in containers.
+  // Railway MySQL is reachable via an internal hostname, so using 127.0.0.1/localhost is never correct.
   'db_driver' => 'pdo_mysql',
-  'db_host' => getenv('MAUTIC_DB_HOST'),
+  'db_host' => (getenv('MAUTIC_DB_HOST') === 'localhost') ? '127.0.0.1' : getenv('MAUTIC_DB_HOST'),
   'db_port' => getenv('MAUTIC_DB_PORT') ?: '3306',
   'db_name' => getenv('MAUTIC_DB_DATABASE'),
   'db_user' => getenv('MAUTIC_DB_USER'),
   'db_password' => getenv('MAUTIC_DB_PASSWORD'),
   'db_table_prefix' => getenv('MAUTIC_DB_TABLE_PREFIX') ?: null,
+
+  // IMPORTANT: ensure no socket is used (prevents SQLSTATE[HY000] [2002] No such file or directory)
+  'db_path' => null,
+
   'db_backup_tables' => 1,
   'db_backup_prefix' => 'bak_',
   'secret_key' => getenv('MAUTIC_SECRET_KEY'),
