@@ -118,11 +118,27 @@ fi
 chmod -R a+rwX /data || true
 
 # Replace expected Mautic paths with symlinks into /data
-rm -rf "${MAUTIC_ROOT}/config" || true
+# IMPORTANT: Do NOT symlink the entire config/ dir. Mautic's installer uses is_dir()/is_writable()
+# checks on /var/www/html/config and can fail on symlink paths even if writes succeed.
 rm -rf "${MAUTIC_ROOT}/var/logs" || true
 rm -rf "${MAUTIC_ROOT}/docroot/media" || true
 
-ln -s /data/config "${MAUTIC_ROOT}/config"
+# Ensure config dir exists as a real directory in the image layer
+mkdir -p "${MAUTIC_ROOT}/config"
+
+# Persist only the local.php file on the Railway volume
+mkdir -p /data/config
+if [ ! -e /data/config/local.php ]; then
+  # Seed the persisted file if it doesn't exist yet
+  if [ -f "${MAUTIC_ROOT}/config/local.php" ]; then
+    cp -f "${MAUTIC_ROOT}/config/local.php" /data/config/local.php || true
+  else
+    : > /data/config/local.php || true
+  fi
+fi
+rm -f "${MAUTIC_ROOT}/config/local.php" || true
+ln -sf /data/config/local.php "${MAUTIC_ROOT}/config/local.php"
+
 mkdir -p "${MAUTIC_ROOT}/var"
 ln -s /data/logs "${MAUTIC_ROOT}/var/logs"
 mkdir -p "${MAUTIC_ROOT}/docroot"
