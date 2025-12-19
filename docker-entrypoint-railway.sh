@@ -100,19 +100,16 @@ if [ -n "${APACHE_USER:-}" ]; then
 fi
 chmod -R a+rwX "${CONFIG_DIR}" "${LOGS_DIR}" "${MEDIA_DIR}" || true
 
-# Minimal runtime info
-echo "[railway][fs] whoami: $(whoami 2>/dev/null || true)"
-echo "[railway][fs] id: $(id 2>/dev/null || true)"
-echo "[railway][fs] apache user/group: ${APACHE_USER:-?}:${APACHE_GROUP:-?}"
-ls -ld "${CONFIG_DIR}" "${LOGS_DIR}" "${MEDIA_DIR}" || true
-ls -ld "${PERSIST_CONFIG}" "${PERSIST_LOGS}" "${PERSIST_MEDIA}" || true
-
+# Minimal startup info (keep this short; logs are noisy on Railway)
+echo "[railway] apache user/group: ${APACHE_USER:-?}:${APACHE_GROUP:-?}"
 # Background sync loop (container -> /data) for reliability
 # Configurable via env vars:
 # - SYNC_INTERVAL_SECONDS (default 30)
 # - SYNC_ENABLED (default 1)
 SYNC_ENABLED="${SYNC_ENABLED:-1}"
 SYNC_INTERVAL_SECONDS="${SYNC_INTERVAL_SECONDS:-30}"
+
+echo "[railway] persistence dirs: config/logs/media -> /data (interval=${SYNC_INTERVAL_SECONDS}s)"
 
 if [ "${SYNC_ENABLED}" != "0" ]; then
   (
