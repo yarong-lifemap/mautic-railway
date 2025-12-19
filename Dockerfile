@@ -1,10 +1,11 @@
 FROM mautic/mautic:5-apache
 
 # Redis Messenger transport requires either the phpredis extension (preferred) or Predis.
-# We install the Debian package for PHP 8.2 on bookworm.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends php8.2-redis \
- && rm -rf /var/lib/apt/lists/*
+# Railway build image may not have Debian PHP redis packages available, so we install
+# the PHP extension via PECL (most portable approach).
+RUN set -eux; \
+    pecl install redis; \
+    docker-php-ext-enable redis
 
 # Ensure required Apache modules/configs are available and MPM is consistent for mod_php
 # Some base images enable multiple MPMs via conf/modules; make it deterministic.
