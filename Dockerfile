@@ -6,13 +6,13 @@ RUN a2dismod mpm_event mpm_worker || true \
  && a2enconf servername || true
 
 # Railway/Apache/PHP config: allow /data and /tmp, and move temp/session dirs onto /data/tmp
-RUN printf '%b' '<Directory /var/www/html>\n\
-php_admin_value open_basedir "/var/www/html:/data:/tmp"\n\
-php_admin_value session.save_path "/data/tmp"\n\
-php_admin_value sys_temp_dir "/data/tmp"\n\
-php_admin_value upload_tmp_dir "/data/tmp"\n\
-</Directory>\n\
-ServerName localhost\n' > /etc/apache2/conf-available/zz-railway.conf \
+RUN echo '<Directory /var/www/html>' > /etc/apache2/conf-available/zz-railway.conf \
+ && echo 'php_admin_value open_basedir "/var/www/html:/data:/tmp"' >> /etc/apache2/conf-available/zz-railway.conf \
+ && echo 'php_admin_value session.save_path "/data/tmp"' >> /etc/apache2/conf-available/zz-railway.conf \
+ && echo 'php_admin_value sys_temp_dir "/data/tmp"' >> /etc/apache2/conf-available/zz-railway.conf \
+ && echo 'php_admin_value upload_tmp_dir "/data/tmp"' >> /etc/apache2/conf-available/zz-railway.conf \
+ && echo '</Directory>' >> /etc/apache2/conf-available/zz-railway.conf \
+ && echo 'ServerName localhost' >> /etc/apache2/conf-available/zz-railway.conf \
  && a2enconf zz-railway
 
 # Entrypoint that prepares persistent dirs + symlinks after the Railway volume is mounted
