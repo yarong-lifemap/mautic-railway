@@ -57,20 +57,28 @@ if [ -n "${APACHE_USER:-}" ]; then
 fi
 chmod -R a+rwX /data || true
 
-# Sync helper (best-effort; avoids deleting container-provided files)
-# Usage: sync_dir <container_dir> <persist_dir>
-# Behavior:
-# - If persist_dir is empty: seed it from container_dir
-# - Else: hydrate container_dir from persist_dir
-sync_dir() {
+# Sync helper (best-effort; avoids deleting files)
+# Usage:
+# - seed_or_hydrate_dir <container_dir> <persist_dir>
+# - sync_back_dir <container_dir> <persist_dir>
+seed_or_hydrate_dir() {
   CONTAINER_DIR="$1"; PERSIST_DIR="$2"
   mkdir -p "$CONTAINER_DIR" "$PERSIST_DIR"
 
   if [ -z "$(ls -A "$PERSIST_DIR" 2>/dev/null || true)" ]; then
+    # Seed persist dir once
     cp -a "$CONTAINER_DIR"/. "$PERSIST_DIR"/ 2>/dev/null || true
   else
+    # Hydrate container dir at startup
     cp -a "$PERSIST_DIR"/. "$CONTAINER_DIR"/ 2>/dev/null || true
   fi
+}
+
+sync_back_dir() {
+  CONTAINER_DIR="$1"; PERSIST_DIR="$2"
+  mkdir -p "$CONTAINER_DIR" "$PERSIST_DIR"
+  # Copy container -> persist (no deletes). This is reliable and simple; can accumulate stale files.
+  cp -a "$CONTAINER_DIR"/. "$PERSIST_DIR"/ 2>/dev/null || true
 }
 
 # Ensure Mautic dirs exist as real directories (no symlinks)
@@ -82,9 +90,9 @@ if [ -L "${LOGS_DIR}" ]; then rm -f "${LOGS_DIR}"; mkdir -p "${LOGS_DIR}"; fi
 if [ -L "${MEDIA_DIR}" ]; then rm -f "${MEDIA_DIR}"; mkdir -p "${MEDIA_DIR}"; fi
 
 # Sync the three directories between /data and container paths
-sync_dir "${CONFIG_DIR}" "${PERSIST_CONFIG}"
-sync_dir "${LOGS_DIR}" "${PERSIST_LOGS}"
-sync_dir "${MEDIA_DIR}" "${PERSIST_MEDIA}"
+seed_or_hydrate_dir "${CONFIG_DIR}" "${PERSIST_CONFIG}"
+seed_or_hydrate_dir "${LOGS_DIR}" "${PERSIST_LOGS}"
+seed_or_hydrate_dir "${MEDIA_DIR}" "${PERSIST_MEDIA}"
 
 # Final permissions (best-effort)
 if [ -n "${APACHE_USER:-}" ]; then
@@ -98,6 +106,27 @@ echo "[railway][fs] id: $(id 2>/dev/null || true)"
 echo "[railway][fs] apache user/group: ${APACHE_USER:-?}:${APACHE_GROUP:-?}"
 ls -ld "${CONFIG_DIR}" "${LOGS_DIR}" "${MEDIA_DIR}" || true
 ls -ld "${PERSIST_CONFIG}" "${PERSIST_LOGS}" "${PERSIST_MEDIA}" || true
+
+# Background sync loop (container -> /data) for reliability
+# Configurable via env vars:
+# - SYNC_INTERVAL_SECONDS (default 30)
+# - SYNC_ENABLED (default 1)
+SYNC_ENABLED="${SYNC_ENABLED:-1}"
+SYNC_INTERVAL_SECONDS="${SYNC_INTERVAL_SECONDS:-30}"
+
+if [ "${SYNC_ENABLED}" != "0" ]; then
+  (
+    while true; do
+      sync_back_dir "${CONFIG_DIR}" "${PERSIST_CONFIG}"
+      sync_back_dir "${LOGS_DIR}" "${PERSIST_LOGS}"
+      sync_back_dir "${MEDIA_DIR}" "${PERSIST_MEDIA}"
+      sleep "${SYNC_INTERVAL_SECONDS}" || sleep 30
+    done
+  ) >/dev/null 2>&1 &
+  echo "[railway] background sync enabled (interval=${SYNC_INTERVAL_SECONDS}s)"
+else
+  echo "[railway] background sync disabled"
+fi
 
 # Keep group-writable defaults for created files
 umask 0002
