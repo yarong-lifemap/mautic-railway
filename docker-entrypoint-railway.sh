@@ -17,19 +17,6 @@ fi
 # Always (re)create the enabled symlink at runtime (some platforms/volumes can clobber conf-enabled).
 ln -sf ../conf-available/zz-railway.conf /etc/apache2/conf-enabled/zz-railway.conf
 
-# Log what Apache will actually parse (since you don't have shell access).
-echo "[railway] --- /etc/apache2/conf-enabled/zz-railway.conf ---"
-cat -n /etc/apache2/conf-enabled/zz-railway.conf || true
-
-echo "[railway] --- /etc/apache2/conf-available/zz-railway.conf ---"
-cat -n /etc/apache2/conf-available/zz-railway.conf || true
-
-echo "[railway] --- ls -l /etc/apache2/conf-enabled/zz-railway.conf /etc/apache2/conf-available/zz-railway.conf ---"
-ls -l /etc/apache2/conf-enabled/zz-railway.conf /etc/apache2/conf-available/zz-railway.conf || true
-
-echo "[railway] --- apache2ctl -t (configtest) ---"
-apache2ctl -t || true
-
 MAUTIC_ROOT="/var/www/html"
 
 mkdir -p /data/config /data/logs /data/media /data/tmp

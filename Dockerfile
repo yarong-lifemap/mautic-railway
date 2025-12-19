@@ -19,15 +19,5 @@ RUN a2enconf zz-railway || true
 COPY docker-entrypoint-railway.sh /usr/local/bin/docker-entrypoint-railway.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint-railway.sh
 
-# Debug aid: print the enabled Apache config during image build logs (helps when no shell access).
-RUN echo '--- /etc/apache2/conf-enabled/zz-railway.conf (if present) ---' \
- && (cat -n /etc/apache2/conf-enabled/zz-railway.conf || true) \
- && echo '--- /etc/apache2/conf-available/zz-railway.conf ---' \
- && cat -n /etc/apache2/conf-available/zz-railway.conf \
- && echo '--- ls -l /etc/apache2/conf-enabled/zz-railway.conf /etc/apache2/conf-available/zz-railway.conf ---' \
- && (ls -l /etc/apache2/conf-enabled/zz-railway.conf /etc/apache2/conf-available/zz-railway.conf || true) \
- && echo '--- apache2 configtest ---' \
- && (apache2ctl -t || true)
-
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint-railway.sh"]
 CMD ["apache2-foreground"]
