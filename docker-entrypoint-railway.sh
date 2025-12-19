@@ -40,6 +40,51 @@ CONFIG_DIR="${MAUTIC_ROOT}/config"
 LOGS_DIR="${MAUTIC_ROOT}/var/logs"
 MEDIA_DIR="${MAUTIC_ROOT}/docroot/media"
 
+# For cron/worker roles (no shared volume on Railway), ensure local.php exists and includes
+# at least db_driver + site_url, otherwise the upstream entrypoint will wait forever.
+#
+# Required env vars for this bootstrap:
+# - MAUTIC_SITE_URL (public URL)
+# - MAUTIC_SECRET_KEY (shared across all roles)
+# - MAUTIC_DB_* (as per upstream template)
+case "${DOCKER_MAUTIC_ROLE:-}" in
+  mautic_cron|mautic_worker)
+    if [ ! -f "${CONFIG_DIR}/local.php" ]; then
+      echo "[railway] ${CONFIG_DIR}/local.php missing for role ${DOCKER_MAUTIC_ROLE}; generating from env"
+
+      : "${MAUTIC_SITE_URL:?MAUTIC_SITE_URL is required for cron/worker}"
+      : "${MAUTIC_SECRET_KEY:?MAUTIC_SECRET_KEY is required for cron/worker}"
+      : "${MAUTIC_DB_DATABASE:?MAUTIC_DB_DATABASE is required}"
+      : "${MAUTIC_DB_HOST:?MAUTIC_DB_HOST is required}"
+      : "${MAUTIC_DB_USER:?MAUTIC_DB_USER is required}"
+      : "${MAUTIC_DB_PASSWORD:?MAUTIC_DB_PASSWORD is required}"
+
+      mkdir -p "${CONFIG_DIR}"
+      cat > "${CONFIG_DIR}/local.php" <<EOF
+<?php
+\$parameters = array(
+  'db_driver' => 'pdo_mysql',
+  'db_host' => getenv('MAUTIC_DB_HOST'),
+  'db_port' => getenv('MAUTIC_DB_PORT') ?: '3306',
+  'db_name' => getenv('MAUTIC_DB_DATABASE'),
+  'db_user' => getenv('MAUTIC_DB_USER'),
+  'db_password' => getenv('MAUTIC_DB_PASSWORD'),
+  'db_table_prefix' => getenv('MAUTIC_DB_TABLE_PREFIX') ?: null,
+  'db_backup_tables' => 1,
+  'db_backup_prefix' => 'bak_',
+  'secret_key' => getenv('MAUTIC_SECRET_KEY'),
+  'site_url' => getenv('MAUTIC_SITE_URL'),
+);
+EOF
+      # best-effort ownership
+      if [ -n "${APACHE_USER:-}" ]; then
+        chown "${APACHE_USER}:${APACHE_GROUP:-${APACHE_USER}}" "${CONFIG_DIR}/local.php" || true
+      fi
+      chmod 640 "${CONFIG_DIR}/local.php" || true
+    fi
+    ;;
+esac
+
 PERSIST_CONFIG="/data/config"
 PERSIST_LOGS="/data/logs"
 PERSIST_MEDIA="/data/media"
@@ -52,6 +97,16 @@ if [ -f /etc/apache2/envvars ]; then
   . /etc/apache2/envvars || true
   APACHE_USER="${APACHE_RUN_USER:-}"; APACHE_GROUP="${APACHE_RUN_GROUP:-}"
 fi
+
+# For cron/worker roles we typically don't have a shared /data volume on Railway.
+# Skip /data hydration/sync to avoid relying on a non-existent volume.
+case "${DOCKER_MAUTIC_ROLE:-}" in
+  mautic_cron|mautic_worker)
+    echo "[railway] role ${DOCKER_MAUTIC_ROLE}: skipping /data persistence hydration"
+    # Chain to upstream entrypoint immediately.
+    exec /entrypoint.sh "$@"
+    ;;
+esac
 
 # Prepare persistent dirs
 mkdir -p "${PERSIST_CONFIG}" "${PERSIST_LOGS}" "${PERSIST_MEDIA}" /data/tmp
