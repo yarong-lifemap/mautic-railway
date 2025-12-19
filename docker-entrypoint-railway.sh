@@ -3,6 +3,13 @@ set -eu
 
 echo "[railway] entrypoint starting"
 
+# Optional role switch (lets Railway run this image as a non-web service without a custom start command)
+ROLE="${ROLE:-web}"
+if [ "${ROLE}" = "fuse-test" ]; then
+  echo "[railway] ROLE=fuse-test; running /usr/local/bin/railway-fuse-test.sh"
+  exec /usr/local/bin/railway-fuse-test.sh
+fi
+
 # Force a single Apache MPM at runtime too (some environments enable modules at container start).
 a2dismod mpm_event mpm_worker mpm_prefork >/dev/null 2>&1 || true
 
