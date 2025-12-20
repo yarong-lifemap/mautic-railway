@@ -117,7 +117,23 @@ fi
 case "${DOCKER_MAUTIC_ROLE:-}" in
   mautic_cron|mautic_worker)
     echo "[railway] role ${DOCKER_MAUTIC_ROLE}: skipping /data persistence hydration"
-    # Chain to upstream entrypoint immediately.
+
+    # Ensure key runtime directories exist and are writable.
+    # On Railway, worker/cron containers are often ephemeral and do not mount /data.
+    # Without this, Monolog can crash with "Failed to open stream: Permission denied".
+    mkdir -p "${LOGS_DIR}" "${CONFIG_DIR}" /tmp || true
+
+    # Best-effort permissions for CLI + messenger consumers.
+    # Worker processes usually run as www-data.
+    chown -R "${MAUTIC_WWW_USER:-www-data}:${MAUTIC_WWW_GROUP:-www-data}" "${LOGS_DIR}" "${CONFIG_DIR}" /tmp 2>/dev/null || true
+    chmod -R a+rwX "${LOGS_DIR}" "${CONFIG_DIR}" /tmp 2>/dev/null || true
+
+    # Also align temp env vars used by some libraries.
+    export TMPDIR="${TMPDIR:-/tmp}"
+    export TMP="${TMP:-/tmp}"
+    export TEMP="${TEMP:-/tmp}"
+
+    # Chain to upstream entrypoint.
     exec /entrypoint.sh "$@"
     ;;
 esac
