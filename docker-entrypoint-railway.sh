@@ -48,6 +48,7 @@ MAUTIC_ROOT="/var/www/html"
 CONFIG_DIR="${MAUTIC_ROOT}/config"
 LOGS_DIR="${MAUTIC_ROOT}/var/logs"
 MEDIA_DIR="${MAUTIC_ROOT}/docroot/media"
+THEMES_DIR="${MAUTIC_ROOT}/docroot/themes"
 
 # For cron/worker roles (no shared volume on Railway), ensure local.php exists and includes
 # at least db_driver + site_url, otherwise the upstream entrypoint will wait forever.
@@ -102,6 +103,7 @@ esac
 PERSIST_CONFIG="/data/config"
 PERSIST_LOGS="/data/logs"
 PERSIST_MEDIA="/data/media"
+PERSIST_THEMES="/data/themes"
 
 # Detect which user Apache will run as (and thus PHP/mod_php)
 APACHE_USER=""
@@ -139,7 +141,7 @@ case "${DOCKER_MAUTIC_ROLE:-}" in
 esac
 
 # Prepare persistent dirs
-mkdir -p "${PERSIST_CONFIG}" "${PERSIST_LOGS}" "${PERSIST_MEDIA}" /data/tmp
+mkdir -p "${PERSIST_CONFIG}" "${PERSIST_LOGS}" "${PERSIST_MEDIA}" "${PERSIST_THEMES}" /data/tmp
 
 # Ensure Apache runtime user can write to persisted volume paths.
 if [ -n "${APACHE_USER:-}" ]; then
@@ -147,48 +149,67 @@ if [ -n "${APACHE_USER:-}" ]; then
 fi
 chmod -R a+rwX /data || true
 
-# Sync helper (best-effort; avoids deleting files)
+# Sync helper using rsync.
+# We intentionally do NOT use --delete for config/logs by default (safer),
+# but we DO use --delete for media/themes so deletions persist.
+#
 # Usage:
-# - seed_or_hydrate_dir <container_dir> <persist_dir>
-# - sync_back_dir <container_dir> <persist_dir>
+# - seed_or_hydrate_dir <container_dir> <persist_dir> [delete_mode]
+# - sync_back_dir <container_dir> <persist_dir> [delete_mode]
+# where delete_mode is "delete" or "nodelete".
 seed_or_hydrate_dir() {
-  CONTAINER_DIR="$1"; PERSIST_DIR="$2"
+  CONTAINER_DIR="$1"; PERSIST_DIR="$2"; DELETE_MODE="${3:-nodelete}"
   mkdir -p "$CONTAINER_DIR" "$PERSIST_DIR"
 
+  # If persist dir is empty, seed it from the image (container -> persist).
   if [ -z "$(ls -A "$PERSIST_DIR" 2>/dev/null || true)" ]; then
-    # Seed persist dir once
-    cp -a "$CONTAINER_DIR"/. "$PERSIST_DIR"/ 2>/dev/null || true
+    if [ "$DELETE_MODE" = "delete" ]; then
+      rsync -a --delete "$CONTAINER_DIR"/ "$PERSIST_DIR"/ >/dev/null 2>&1 || true
+    else
+      rsync -a "$CONTAINER_DIR"/ "$PERSIST_DIR"/ >/dev/null 2>&1 || true
+    fi
   else
-    # Hydrate container dir at startup
-    cp -a "$PERSIST_DIR"/. "$CONTAINER_DIR"/ 2>/dev/null || true
+    # Hydrate container dir at startup (persist -> container).
+    if [ "$DELETE_MODE" = "delete" ]; then
+      rsync -a --delete "$PERSIST_DIR"/ "$CONTAINER_DIR"/ >/dev/null 2>&1 || true
+    else
+      rsync -a "$PERSIST_DIR"/ "$CONTAINER_DIR"/ >/dev/null 2>&1 || true
+    fi
   fi
 }
 
 sync_back_dir() {
-  CONTAINER_DIR="$1"; PERSIST_DIR="$2"
+  CONTAINER_DIR="$1"; PERSIST_DIR="$2"; DELETE_MODE="${3:-nodelete}"
   mkdir -p "$CONTAINER_DIR" "$PERSIST_DIR"
-  # Copy container -> persist (no deletes). This is reliable and simple; can accumulate stale files.
-  cp -a "$CONTAINER_DIR"/. "$PERSIST_DIR"/ 2>/dev/null || true
+  if [ "$DELETE_MODE" = "delete" ]; then
+    rsync -a --delete "$CONTAINER_DIR"/ "$PERSIST_DIR"/ >/dev/null 2>&1 || true
+  else
+    rsync -a "$CONTAINER_DIR"/ "$PERSIST_DIR"/ >/dev/null 2>&1 || true
+  fi
 }
 
 # Ensure Mautic dirs exist as real directories (no symlinks)
-mkdir -p "${CONFIG_DIR}" "${LOGS_DIR}" "${MEDIA_DIR}"
+mkdir -p "${CONFIG_DIR}" "${LOGS_DIR}" "${MEDIA_DIR}" "${THEMES_DIR}"
 
 # Important: remove symlinks if a previous version created them
 if [ -L "${CONFIG_DIR}" ]; then rm -f "${CONFIG_DIR}"; mkdir -p "${CONFIG_DIR}"; fi
 if [ -L "${LOGS_DIR}" ]; then rm -f "${LOGS_DIR}"; mkdir -p "${LOGS_DIR}"; fi
 if [ -L "${MEDIA_DIR}" ]; then rm -f "${MEDIA_DIR}"; mkdir -p "${MEDIA_DIR}"; fi
+if [ -L "${THEMES_DIR}" ]; then rm -f "${THEMES_DIR}"; mkdir -p "${THEMES_DIR}"; fi
 
-# Sync the three directories between /data and container paths
-seed_or_hydrate_dir "${CONFIG_DIR}" "${PERSIST_CONFIG}"
-seed_or_hydrate_dir "${LOGS_DIR}" "${PERSIST_LOGS}"
-seed_or_hydrate_dir "${MEDIA_DIR}" "${PERSIST_MEDIA}"
+# Sync the directories between /data and container paths
+# - config/logs: no deletes (safer)
+# - media/themes: mirror with deletes (so deletions persist)
+seed_or_hydrate_dir "${CONFIG_DIR}" "${PERSIST_CONFIG}" nodelete
+seed_or_hydrate_dir "${LOGS_DIR}" "${PERSIST_LOGS}" nodelete
+seed_or_hydrate_dir "${MEDIA_DIR}" "${PERSIST_MEDIA}" delete
+seed_or_hydrate_dir "${THEMES_DIR}" "${PERSIST_THEMES}" delete
 
 # Final permissions (best-effort)
 if [ -n "${APACHE_USER:-}" ]; then
-  chown -R "${APACHE_USER}:${APACHE_GROUP:-${APACHE_USER}}" "${CONFIG_DIR}" "${LOGS_DIR}" "${MEDIA_DIR}" || true
+  chown -R "${APACHE_USER}:${APACHE_GROUP:-${APACHE_USER}}" "${CONFIG_DIR}" "${LOGS_DIR}" "${MEDIA_DIR}" "${THEMES_DIR}" || true
 fi
-chmod -R a+rwX "${CONFIG_DIR}" "${LOGS_DIR}" "${MEDIA_DIR}" || true
+chmod -R a+rwX "${CONFIG_DIR}" "${LOGS_DIR}" "${MEDIA_DIR}" "${THEMES_DIR}" || true
 
 # Minimal startup info (keep this short; logs are noisy on Railway)
 echo "[railway] apache user/group: ${APACHE_USER:-?}:${APACHE_GROUP:-?}"
@@ -199,14 +220,15 @@ echo "[railway] apache user/group: ${APACHE_USER:-?}:${APACHE_GROUP:-?}"
 SYNC_ENABLED="${SYNC_ENABLED:-1}"
 SYNC_INTERVAL_SECONDS="${SYNC_INTERVAL_SECONDS:-30}"
 
-echo "[railway] persistence dirs: config/logs/media -> /data (interval=${SYNC_INTERVAL_SECONDS}s)"
+echo "[railway] persistence dirs: config/logs/media/themes -> /data (interval=${SYNC_INTERVAL_SECONDS}s)"
 
 if [ "${SYNC_ENABLED}" != "0" ]; then
   (
     while true; do
-      sync_back_dir "${CONFIG_DIR}" "${PERSIST_CONFIG}"
-      sync_back_dir "${LOGS_DIR}" "${PERSIST_LOGS}"
-      sync_back_dir "${MEDIA_DIR}" "${PERSIST_MEDIA}"
+      sync_back_dir "${CONFIG_DIR}" "${PERSIST_CONFIG}" nodelete
+      sync_back_dir "${LOGS_DIR}" "${PERSIST_LOGS}" nodelete
+      sync_back_dir "${MEDIA_DIR}" "${PERSIST_MEDIA}" delete
+      sync_back_dir "${THEMES_DIR}" "${PERSIST_THEMES}" delete
       sleep "${SYNC_INTERVAL_SECONDS}" || sleep 30
     done
   ) >/dev/null 2>&1 &

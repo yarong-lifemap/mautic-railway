@@ -57,7 +57,12 @@ flowchart TB
 - **`mautic-railway-web`**: Apache + PHP serving the UI and public endpoints.
 - **`mautic-railway-worker`**: long-running `messenger:consume` process to execute queued jobs (email/hit processing, etc.).
 - **`mautic-railway-cron`**: scheduled CLI tasks that enqueue/trigger work (segments, campaigns, broadcasts, etc.).
-- **`mautic-railway-volume` mounted at `/data` (web only)**: persistent storage used by the entrypoint for safe temp/session dirs and (optionally) persistence/hydration.
+- **`mautic-railway-volume` mounted at `/data` (web only)**: persistent storage used by the entrypoint for safe temp/session dirs and persistence/hydration.
+  - Persisted dirs:
+    - `config` ↔ `/data/config` (rsync, no `--delete`)
+    - `var/logs` ↔ `/data/logs` (rsync, no `--delete`)
+    - `docroot/media` ↔ `/data/media` (rsync `--delete`)
+    - `docroot/themes` ↔ `/data/themes` (rsync `--delete`)
 
 On Railway, run **three services** from the same image, differentiated by `DOCKER_MAUTIC_ROLE`:
 

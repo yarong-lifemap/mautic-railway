@@ -1,5 +1,11 @@
 FROM mautic/mautic:5-apache
 
+# Install rsync for reliable volume mirroring (supports deletions via --delete).
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends rsync; \
+    rm -rf /var/lib/apt/lists/*
+
 # Redis Messenger transport requires either the phpredis extension (preferred) or Predis.
 # Railway build image may not have Debian PHP redis packages available, so we install
 # the PHP extension via PECL (most portable approach).
